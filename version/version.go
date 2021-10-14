@@ -10,8 +10,11 @@ var (
 	// TMVersion is the semantic version of Tendermint Core.
 	TMVersion = TMVersionDefault
 
-	// ABCISemVer and ABCIVersion give the semantic version of the ABCI library.
-	ABCISemVer  = tmToABCIVersion(TMVersion)
+	// ABCIVersion is the semantic version of ABCI supported by this version of
+	// Tendermint. The ABCI version matches the Tendermint version on its major
+	// and minor revisions, and does not have a patch version.
+	//
+	// For example TM "v0.35.11" corresponds to ABCI "v0.35".
 	ABCIVersion = tmToABCIVersion(TMVersion)
 
 	// P2PProtocol versions all p2p behavior and msgs.
@@ -40,15 +43,11 @@ func (c Consensus) ToProto() tmversion.Consensus {
 }
 
 // tmToABCIVersion converts a Tendermint semantic version into the
-// corresponding ABCI semantic version. The ABCI version matches the Tendermint
-// version on its major and minor revisions, and does not have a patch version.
-//
-// For example TM "v0.35.11" corresponds to ABCI "v0.35".
-// If tmVersion does not have a sensible format, a placeholder is returned.
+// corresponding ABCI semantic version.
 func tmToABCIVersion(tmVersion string) string {
 	parts := strings.SplitN(tmVersion, ".", 3)
 	if len(parts) < 2 {
-		return tmVersion + "-unknown-abci"
+		return tmVersion + "-unreleased"
 	}
 	return strings.Join(parts[:2], ".")
 }
