@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"github.com/tendermint/tendermint/abci/example/kvstore"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
 	"github.com/tendermint/tendermint/rpc/coretypes"
@@ -17,12 +18,17 @@ import (
 )
 
 func TestHTTPSimple(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Start a tendermint node (and kvstore) in the background to test against
 	app := kvstore.NewApplication()
-	conf := rpctest.CreateConfig("ExampleHTTP_simple")
+	conf, err := rpctest.CreateConfig(t, "ExampleHTTP_simple")
+	require.NoError(t, err)
 
 	_, closer, err := rpctest.StartTendermint(ctx, conf, app, rpctest.SuppressStdout)
 	if err != nil {
@@ -42,17 +48,17 @@ func TestHTTPSimple(t *testing.T) {
 
 	// Broadcast the transaction and wait for it to commit (rather use
 	// c.BroadcastTxSync though in production).
-	bres, err := c.BroadcastTxCommit(context.Background(), tx)
+	bres, err := c.BroadcastTxCommit(ctx, tx)
 	require.NoError(t, err)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if bres.CheckTx.IsErr() || bres.DeliverTx.IsErr() {
+	if bres.CheckTx.IsErr() || bres.TxResult.IsErr() {
 		log.Fatal("BroadcastTxCommit transaction failed")
 	}
 
 	// Now try to fetch the value for the key
-	qres, err := c.ABCIQuery(context.Background(), "/key", k)
+	qres, err := c.ABCIQuery(ctx, "/key", k)
 	require.NoError(t, err)
 	require.False(t, qres.Response.IsErr(), "ABCIQuery failed")
 	require.True(t, bytes.Equal(qres.Response.Key, k),
@@ -66,12 +72,17 @@ func TestHTTPSimple(t *testing.T) {
 }
 
 func TestHTTPBatching(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Start a tendermint node (and kvstore) in the background to test against
 	app := kvstore.NewApplication()
-	conf := rpctest.CreateConfig("ExampleHTTP_batching")
+	conf, err := rpctest.CreateConfig(t, "ExampleHTTP_batching")
+	require.NoError(t, err)
 
 	_, closer, err := rpctest.StartTendermint(ctx, conf, app, rpctest.SuppressStdout)
 	if err != nil {
@@ -116,7 +127,7 @@ func TestHTTPBatching(t *testing.T) {
 			// Now let's query for the original results as a batch
 			exists := 0
 			for _, key := range [][]byte{k1, k2} {
-				_, err := batch.ABCIQuery(context.Background(), "/key", key)
+				_, err := batch.ABCIQuery(ctx, "/key", key)
 				if err == nil {
 					exists++
 

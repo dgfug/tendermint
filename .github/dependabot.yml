@@ -3,25 +3,89 @@ updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: daily
-      time: "11:00"
+      interval: weekly
+    target-branch: "master"
     open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "v0.34.x"
+    open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "v0.35.x"
+    open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "v0.36.x"
+    open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge
+
   - package-ecosystem: npm
     directory: "/docs"
     schedule:
-      interval: daily
-      time: "11:00"
+      interval: weekly
     open-pull-requests-limit: 10
-    reviewers:
-      - fadeev
+
+  ###################################
+  ##
+  ## Update All Go Dependencies
+
   - package-ecosystem: gomod
     directory: "/"
     schedule:
-      interval: daily
-      time: "11:00"
+      interval: weekly
+    target-branch: "master"
     open-pull-requests-limit: 10
-    reviewers:
-      - melekes
-      - tessr
     labels:
       - T:dependencies
+      - S:automerge
+
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "v0.34.x"
+    open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge
+
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "v0.35.x"
+    open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge
+
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    target-branch: "v0.36.x"
+    open-pull-requests-limit: 10
+    labels:
+      - T:dependencies
+      - S:automerge

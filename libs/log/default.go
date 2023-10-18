@@ -14,8 +14,6 @@ var _ Logger = (*defaultLogger)(nil)
 
 type defaultLogger struct {
 	zerolog.Logger
-
-	trace bool
 }
 
 // NewDefaultLogger returns a default logger that can be used within Tendermint
@@ -26,7 +24,7 @@ type defaultLogger struct {
 // Since zerolog supports typed structured logging and it is difficult to reflect
 // that in a generic interface, all logging methods accept a series of key/value
 // pair tuples, where the key must be a string.
-func NewDefaultLogger(format, level string, trace bool) (Logger, error) {
+func NewDefaultLogger(format, level string) (Logger, error) {
 	var logWriter io.Writer
 	switch strings.ToLower(format) {
 	case LogFormatPlain, LogFormatText:
@@ -57,56 +55,43 @@ func NewDefaultLogger(format, level string, trace bool) (Logger, error) {
 	// make the writer thread-safe
 	logWriter = newSyncWriter(logWriter)
 
-	return defaultLogger{
-		Logger: zerolog.New(logWriter).Level(logLevel).With().Timestamp().Logger(),
-		trace:  trace,
-	}, nil
-}
-
-// MustNewDefaultLogger delegates a call NewDefaultLogger where it panics on
-// error.
-func MustNewDefaultLogger(format, level string, trace bool) Logger {
-	logger, err := NewDefaultLogger(format, level, trace)
-	if err != nil {
-		panic(err)
-	}
-
-	return logger
+	return &defaultLogger{Logger: zerolog.New(logWriter).Level(logLevel).With().Timestamp().Logger()}, nil
 }
 
 func (l defaultLogger) Info(msg string, keyVals ...interface{}) {
-	l.Logger.Info().Fields(getLogFields(keyVals...)).Msg(msg)
+	l.Logger.Info().Fields(keyVals).Msg(msg)
 }
 
 func (l defaultLogger) Error(msg string, keyVals ...interface{}) {
-	e := l.Logger.Error()
-	if l.trace {
-		e = e.Stack()
-	}
-
-	e.Fields(getLogFields(keyVals...)).Msg(msg)
+	l.Logger.Error().Fields(keyVals).Msg(msg)
 }
 
 func (l defaultLogger) Debug(msg string, keyVals ...interface{}) {
-	l.Logger.Debug().Fields(getLogFields(keyVals...)).Msg(msg)
+	l.Logger.Debug().Fields(keyVals).Msg(msg)
 }
 
 func (l defaultLogger) With(keyVals ...interface{}) Logger {
-	return defaultLogger{
-		Logger: l.Logger.With().Fields(getLogFields(keyVals...)).Logger(),
-		trace:  l.trace,
-	}
+	return &defaultLogger{Logger: l.Logger.With().Fields(keyVals).Logger()}
 }
 
-func getLogFields(keyVals ...interface{}) map[string]interface{} {
-	if len(keyVals)%2 != 0 {
-		return nil
+// OverrideWithNewLogger replaces an existing logger's internal with
+// a new logger, and makes it possible to reconfigure an existing
+// logger that has already been propagated to callers.
+func OverrideWithNewLogger(logger Logger, format, level string) error {
+	ol, ok := logger.(*defaultLogger)
+	if !ok {
+		return fmt.Errorf("logger %T cannot be overridden", logger)
 	}
 
-	fields := make(map[string]interface{}, len(keyVals))
-	for i := 0; i < len(keyVals); i += 2 {
-		fields[fmt.Sprint(keyVals[i])] = keyVals[i+1]
+	newLogger, err := NewDefaultLogger(format, level)
+	if err != nil {
+		return err
+	}
+	nl, ok := newLogger.(*defaultLogger)
+	if !ok {
+		return fmt.Errorf("logger %T cannot be overridden by %T", logger, newLogger)
 	}
 
-	return fields
+	ol.Logger = nl.Logger
+	return nil
 }

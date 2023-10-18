@@ -83,7 +83,7 @@ for more information.
 Rate-limiting and authentication are another key aspects to help protect
 against DOS attacks. Validators are supposed to use external tools like
 [NGINX](https://www.nginx.com/blog/rate-limiting-nginx/) or
-[traefik](https://docs.traefik.io/middlewares/ratelimit/)
+[traefik](https://doc.traefik.io/traefik/middlewares/http/ratelimit/)
 to achieve the same things.
 
 ## Debugging Tendermint
@@ -294,14 +294,6 @@ recv-rate=20000000 # 2MB/s
 flush-throttle-timeout=10
 max-packet-msg-payload-size=10240 # 10KB
 ```
-
-- `mempool.recheck`
-
-After every block, Tendermint rechecks every transaction left in the
-mempool to see if transactions committed in that block affected the
-application state, so some of the transactions left may become invalid.
-If that does not apply to your application, you can disable it by
-setting `mempool.recheck=false`.
 
 - `mempool.broadcast`
 

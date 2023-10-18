@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
-	tmsync "github.com/tendermint/tendermint/internal/libs/sync"
+	tmstrings "github.com/tendermint/tendermint/internal/libs/strings"
 	"github.com/tendermint/tendermint/libs/log"
 	tmmath "github.com/tendermint/tendermint/libs/math"
 	"github.com/tendermint/tendermint/light/provider"
 	"github.com/tendermint/tendermint/light/store"
+
 	"github.com/tendermint/tendermint/types"
 )
 
@@ -52,8 +53,6 @@ const (
 
 	// 10s is sufficient for most networks.
 	defaultMaxBlockLag = 10 * time.Second
-
-	defaultProviderTimeout = 10 * time.Second
 )
 
 // Option sets a parameter for the light client.
@@ -113,12 +112,6 @@ func MaxBlockLag(d time.Duration) Option {
 	return func(c *Client) { c.maxBlockLag = d }
 }
 
-// Provider timeout is the maximum time that the light client will wait for a
-// provider to respond with a light block.
-func ProviderTimeout(d time.Duration) Option {
-	return func(c *Client) { c.providerTimeout = d }
-}
-
 // Client represents a light client, connected to a single chain, which gets
 // light blocks from a primary provider, verifies them either sequentially or by
 // skipping some and stores them in a trusted store (usually, a local FS).
@@ -131,10 +124,9 @@ type Client struct {
 	trustLevel       tmmath.Fraction
 	maxClockDrift    time.Duration
 	maxBlockLag      time.Duration
-	providerTimeout  time.Duration
 
 	// Mutex for locking during changes of the light clients providers
-	providerMutex tmsync.Mutex
+	providerMutex sync.Mutex
 	// Primary provider of new headers.
 	primary provider.Provider
 	// Providers used to "witness" new headers.
@@ -151,14 +143,29 @@ type Client struct {
 	logger log.Logger
 }
 
+func validatePrimaryAndWitnesses(primary provider.Provider, witnesses []provider.Provider) error {
+	witnessMap := make(map[string]struct{})
+	for _, w := range witnesses {
+		if w.ID() == primary.ID() {
+			return fmt.Errorf("primary (%s) cannot be also configured as witness", primary.ID())
+		}
+		if _, duplicate := witnessMap[w.ID()]; duplicate {
+			return fmt.Errorf("witness list must not contain duplicates; duplicate found: %s", w.ID())
+		}
+		witnessMap[w.ID()] = struct{}{}
+	}
+	return nil
+}
+
 // NewClient returns a new light client. It returns an error if it fails to
-// obtain the light block from the primary or they are invalid (e.g. trust
+// obtain the light block from the primary, or they are invalid (e.g. trust
 // hash does not match with the one from the headers).
 //
 // Witnesses are providers, which will be used for cross-checking the primary
-// provider. At least one witness must be given when skipping verification is
-// used (default). A witness can become a primary iff the current primary is
-// unavailable.
+// provider. At least one witness should be given when skipping verification is
+// used (default). A verified header is compared with the headers at same height
+// obtained from the specified witnesses. A witness can become a primary iff the
+// current primary is unavailable.
 //
 // See all Option(s) for the additional configuration.
 func NewClient(
@@ -168,7 +175,8 @@ func NewClient(
 	primary provider.Provider,
 	witnesses []provider.Provider,
 	trustedStore store.Store,
-	options ...Option) (*Client, error) {
+	options ...Option,
+) (*Client, error) {
 
 	// Check whether the trusted store already has a trusted block. If so, then create
 	// a new client from the trusted store instead of the trust options.
@@ -182,14 +190,14 @@ func NewClient(
 		)
 	}
 
+	// Check that the witness list does not include duplicates or the primary
+	if err := validatePrimaryAndWitnesses(primary, witnesses); err != nil {
+		return nil, err
+	}
+
 	// Validate trust options
 	if err := trustOptions.ValidateBasic(); err != nil {
 		return nil, fmt.Errorf("invalid TrustOptions: %w", err)
-	}
-
-	// Validate the number of witnesses.
-	if len(witnesses) < 1 {
-		return nil, ErrNoWitnesses
 	}
 
 	c := &Client{
@@ -202,7 +210,6 @@ func NewClient(
 		trustLevel:       DefaultTrustLevel,
 		maxClockDrift:    defaultMaxClockDrift,
 		maxBlockLag:      defaultMaxBlockLag,
-		providerTimeout:  defaultProviderTimeout,
 		pruningSize:      defaultPruningSize,
 		logger:           log.NewNopLogger(),
 	}
@@ -235,6 +242,11 @@ func NewClientFromTrustedStore(
 	trustedStore store.Store,
 	options ...Option) (*Client, error) {
 
+	// Check that the witness list does not include duplicates or the primary
+	if err := validatePrimaryAndWitnesses(primary, witnesses); err != nil {
+		return nil, err
+	}
+
 	c := &Client{
 		chainID:          chainID,
 		trustingPeriod:   trustingPeriod,
@@ -251,11 +263,6 @@ func NewClientFromTrustedStore(
 
 	for _, o := range options {
 		o(c)
-	}
-
-	// Validate the number of witnesses.
-	if len(c.witnesses) < 1 {
-		return nil, ErrNoWitnesses
 	}
 
 	// Validate trust level.
@@ -438,7 +445,7 @@ func (c *Client) VerifyLightBlockAtHeight(ctx context.Context, height int64, now
 // headers are not adjacent, verifySkipping is performed and necessary (not all)
 // intermediate headers will be requested. See the specification for details.
 // Intermediate headers are not saved to database.
-// https://github.com/tendermint/spec/blob/master/spec/consensus/light-client.md
+// https://github.com/tendermint/tendermint/blob/master/spec/light-client/README.md
 //
 // If the header, which is older than the currently trusted header, is
 // requested and the light client does not have it, VerifyHeader will perform:
@@ -469,7 +476,8 @@ func (c *Client) VerifyHeader(ctx context.Context, newHeader *types.Header, now 
 			return fmt.Errorf("existing trusted header %X does not match newHeader %X", l.Hash(), newHeader.Hash())
 		}
 		c.logger.Debug("header has already been verified",
-			"height", newHeader.Height, "hash", newHeader.Hash())
+			"height", newHeader.Height,
+			"hash", tmstrings.LazyBlockHash(newHeader))
 		return nil
 	}
 
@@ -570,7 +578,7 @@ func (c *Client) verifySequential(
 		// 2) Verify them
 		c.logger.Debug("verify adjacent newLightBlock against verifiedBlock",
 			"trustedHeight", verifiedBlock.Height,
-			"trustedHash", verifiedBlock.Hash(),
+			"trustedHash", tmstrings.LazyBlockHash(verifiedBlock),
 			"newHeight", interimBlock.Height,
 			"newHash", interimBlock.Hash())
 
@@ -657,9 +665,9 @@ func (c *Client) verifySkipping(
 	for {
 		c.logger.Debug("verify non-adjacent newHeader against verifiedBlock",
 			"trustedHeight", verifiedBlock.Height,
-			"trustedHash", verifiedBlock.Hash(),
+			"trustedHash", tmstrings.LazyBlockHash(verifiedBlock),
 			"newHeight", blockCache[depth].Height,
-			"newHash", blockCache[depth].Hash())
+			"newHash", tmstrings.LazyBlockHash(blockCache[depth]))
 
 		// Verify the untrusted header. This function is equivalent to
 		// ValidAndVerified in the spec
@@ -695,9 +703,7 @@ func (c *Client) verifySkipping(
 			if depth == len(blockCache)-1 {
 				// schedule what the next height we need to fetch is
 				pivotHeight := c.schedule(verifiedBlock.Height, blockCache[depth].Height)
-				subCtx, cancel := context.WithTimeout(ctx, c.providerTimeout)
-				defer cancel()
-				interimBlock, providerErr := c.getLightBlock(subCtx, source, pivotHeight)
+				interimBlock, providerErr := c.getLightBlock(ctx, source, pivotHeight)
 				if providerErr != nil {
 					return nil, ErrVerificationFailed{From: verifiedBlock.Height, To: pivotHeight, Reason: providerErr}
 				}
@@ -893,9 +899,9 @@ func (c *Client) backwards(
 		interimHeader = interimBlock.Header
 		c.logger.Debug("verify newHeader against verifiedHeader",
 			"trustedHeight", verifiedHeader.Height,
-			"trustedHash", verifiedHeader.Hash(),
+			"trustedHash", tmstrings.LazyBlockHash(verifiedHeader),
 			"newHeight", interimHeader.Height,
-			"newHash", interimHeader.Hash())
+			"newHash", tmstrings.LazyBlockHash(interimHeader))
 		if err := VerifyBackwards(interimHeader, verifiedHeader); err != nil {
 			// verification has failed
 			c.logger.Info("backwards verification failed, replacing primary...", "err", err, "primary", c.primary)
@@ -962,10 +968,8 @@ func (c *Client) lightBlockFromPrimary(ctx context.Context, height int64) (*type
 }
 
 func (c *Client) getLightBlock(ctx context.Context, p provider.Provider, height int64) (*types.LightBlock, error) {
-	subCtx, cancel := context.WithTimeout(ctx, c.providerTimeout)
-	defer cancel()
-	l, err := p.LightBlock(subCtx, height)
-	if err == context.DeadlineExceeded || ctx.Err() != nil {
+	l, err := p.LightBlock(ctx, height)
+	if ctx.Err() != nil {
 		return nil, provider.ErrNoResponse
 	}
 	return l, err
@@ -973,7 +977,6 @@ func (c *Client) getLightBlock(ctx context.Context, p provider.Provider, height 
 
 // NOTE: requires a providerMutex lock
 func (c *Client) removeWitnesses(indexes []int) error {
-	// check that we will still have witnesses remaining
 	if len(c.witnesses) <= len(indexes) {
 		return ErrNoWitnesses
 	}
@@ -1014,22 +1017,31 @@ func (c *Client) findNewPrimary(ctx context.Context, height int64, remove bool) 
 		wg                sync.WaitGroup
 	)
 
-	// send out a light block request to all witnesses
-	subctx, cancel := context.WithTimeout(ctx, c.providerTimeout)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// send out a light block request to all witnesses
 	for index := range c.witnesses {
 		wg.Add(1)
 		go func(witnessIndex int, witnessResponsesC chan witnessResponse) {
 			defer wg.Done()
 
-			lb, err := c.witnesses[witnessIndex].LightBlock(subctx, height)
-			witnessResponsesC <- witnessResponse{lb, witnessIndex, err}
+			lb, err := c.witnesses[witnessIndex].LightBlock(ctx, height)
+			select {
+			case witnessResponsesC <- witnessResponse{lb, witnessIndex, err}:
+			case <-ctx.Done():
+			}
+
 		}(index, witnessResponsesC)
 	}
 
 	// process all the responses as they come in
 	for i := 0; i < cap(witnessResponsesC); i++ {
-		response := <-witnessResponsesC
+		var response witnessResponse
+		select {
+		case response = <-witnessResponsesC:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 		switch response.err {
 		// success! We have found a new primary
 		case nil:
@@ -1057,10 +1069,6 @@ func (c *Client) findNewPrimary(ctx context.Context, height int64, remove bool) 
 
 			// return the light block that new primary responded with
 			return response.lb, nil
-
-		// catch canceled contexts or deadlines
-		case context.Canceled, context.DeadlineExceeded:
-			return nil, response.err
 
 		// process benign errors by logging them only
 		case provider.ErrNoResponse, provider.ErrLightBlockNotFound, provider.ErrHeightTooHigh:
@@ -1091,7 +1099,7 @@ func (c *Client) compareFirstHeaderWithWitnesses(ctx context.Context, h *types.S
 	defer c.providerMutex.Unlock()
 
 	if len(c.witnesses) < 1 {
-		return ErrNoWitnesses
+		return nil
 	}
 
 	errc := make(chan error, len(c.witnesses))
@@ -1141,4 +1149,30 @@ func (c *Client) providerShouldBeRemoved(err error) bool {
 	return errors.As(err, &provider.ErrUnreliableProvider{}) ||
 		errors.As(err, &provider.ErrBadLightBlock{}) ||
 		errors.Is(err, provider.ErrConnectionClosed)
+}
+
+func (c *Client) Status(ctx context.Context) *types.LightClientInfo {
+	chunks := make([]string, len(c.witnesses))
+
+	// If primary is in witness list we do not want to count it twice in the number of peers
+	primaryNotInWitnessList := 1
+	for i, val := range c.witnesses {
+		chunks[i] = val.ID()
+		if chunks[i] == c.primary.ID() {
+			primaryNotInWitnessList = 0
+		}
+	}
+
+	return &types.LightClientInfo{
+		PrimaryID:         c.primary.ID(),
+		WitnessesID:       chunks,
+		NumPeers:          len(chunks) + primaryNotInWitnessList,
+		LastTrustedHeight: c.latestTrustedBlock.Height,
+		LastTrustedHash:   c.latestTrustedBlock.Hash(),
+		LatestBlockTime:   c.latestTrustedBlock.Time,
+		TrustingPeriod:    c.trustingPeriod.String(),
+		// The caller of /status can deduce this from the two variables above
+		// Having a boolean flag improves readbility
+		TrustedBlockExpired: HeaderExpired(c.latestTrustedBlock.SignedHeader, c.trustingPeriod, time.Now()),
+	}
 }

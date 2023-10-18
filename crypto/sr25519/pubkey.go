@@ -7,7 +7,6 @@ import (
 	"github.com/oasisprotocol/curve25519-voi/primitives/sr25519"
 
 	"github.com/tendermint/tendermint/crypto"
-	"github.com/tendermint/tendermint/crypto/tmhash"
 )
 
 var _ crypto.PubKey = PubKey{}
@@ -23,12 +22,15 @@ const (
 // PubKey implements crypto.PubKey.
 type PubKey []byte
 
+// TypeTag satisfies the jsontypes.Tagged interface.
+func (PubKey) TypeTag() string { return PubKeyName }
+
 // Address is the SHA256-20 of the raw pubkey bytes.
 func (pubKey PubKey) Address() crypto.Address {
 	if len(pubKey) != PubKeySize {
 		panic("pubkey is incorrect size")
 	}
-	return crypto.Address(tmhash.SumTruncated(pubKey))
+	return crypto.AddressHash(pubKey)
 }
 
 // Bytes returns the PubKey byte format.

@@ -105,6 +105,22 @@ func (_m *BlockStore) LoadBlockCommit(height int64) *types.Commit {
 	return r0
 }
 
+// LoadBlockExtendedCommit provides a mock function with given fields: height
+func (_m *BlockStore) LoadBlockExtendedCommit(height int64) *types.ExtendedCommit {
+	ret := _m.Called(height)
+
+	var r0 *types.ExtendedCommit
+	if rf, ok := ret.Get(0).(func(int64) *types.ExtendedCommit); ok {
+		r0 = rf(height)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.ExtendedCommit)
+		}
+	}
+
+	return r0
+}
+
 // LoadBlockMeta provides a mock function with given fields: height
 func (_m *BlockStore) LoadBlockMeta(height int64) *types.BlockMeta {
 	ret := _m.Called(height)
@@ -112,6 +128,22 @@ func (_m *BlockStore) LoadBlockMeta(height int64) *types.BlockMeta {
 	var r0 *types.BlockMeta
 	if rf, ok := ret.Get(0).(func(int64) *types.BlockMeta); ok {
 		r0 = rf(height)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*types.BlockMeta)
+		}
+	}
+
+	return r0
+}
+
+// LoadBlockMetaByHash provides a mock function with given fields: hash
+func (_m *BlockStore) LoadBlockMetaByHash(hash []byte) *types.BlockMeta {
+	ret := _m.Called(hash)
+
+	var r0 *types.BlockMeta
+	if rf, ok := ret.Get(0).(func([]byte) *types.BlockMeta); ok {
+		r0 = rf(hash)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*types.BlockMeta)
@@ -179,6 +211,11 @@ func (_m *BlockStore) SaveBlock(block *types.Block, blockParts *types.PartSet, s
 	_m.Called(block, blockParts, seenCommit)
 }
 
+// SaveBlockWithExtendedCommit provides a mock function with given fields: block, blockParts, seenCommit
+func (_m *BlockStore) SaveBlockWithExtendedCommit(block *types.Block, blockParts *types.PartSet, seenCommit *types.ExtendedCommit) {
+	_m.Called(block, blockParts, seenCommit)
+}
+
 // Size provides a mock function with given fields:
 func (_m *BlockStore) Size() int64 {
 	ret := _m.Called()
@@ -191,4 +228,19 @@ func (_m *BlockStore) Size() int64 {
 	}
 
 	return r0
+}
+
+type NewBlockStoreT interface {
+	mock.TestingT
+	Cleanup(func())
+}
+
+// NewBlockStore creates a new instance of BlockStore. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
+func NewBlockStore(t NewBlockStoreT) *BlockStore {
+	mock := &BlockStore{}
+	mock.Mock.Test(t)
+
+	t.Cleanup(func() { mock.AssertExpectations(t) })
+
+	return mock
 }

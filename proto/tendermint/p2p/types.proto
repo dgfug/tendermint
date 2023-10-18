@@ -32,11 +32,14 @@ message PeerInfo {
   string                    id             = 1 [(gogoproto.customname) = "ID"];
   repeated PeerAddressInfo  address_info   = 2;
   google.protobuf.Timestamp last_connected = 3 [(gogoproto.stdtime) = true];
+  bool                      inactive       = 4;
 }
 
 message PeerAddressInfo {
   string                    address           = 1;
-  google.protobuf.Timestamp last_dial_success = 2 [(gogoproto.stdtime) = true];
-  google.protobuf.Timestamp last_dial_failure = 3 [(gogoproto.stdtime) = true];
-  uint32                    dial_failures     = 4;
+  google.protobuf.Timestamp last_dial_success = 2
+      [(gogoproto.stdtime) = true];
+  google.protobuf.Timestamp last_dial_failure = 3
+      [(gogoproto.stdtime) = true];
+  uint32 dial_failures = 4;
 }

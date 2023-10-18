@@ -2,6 +2,8 @@ package ed25519
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -11,8 +13,7 @@ import (
 	"github.com/oasisprotocol/curve25519-voi/primitives/ed25519/extra/cache"
 
 	"github.com/tendermint/tendermint/crypto"
-	"github.com/tendermint/tendermint/crypto/tmhash"
-	tmjson "github.com/tendermint/tendermint/libs/json"
+	"github.com/tendermint/tendermint/internal/jsontypes"
 )
 
 //-------------------------------------
@@ -56,12 +57,15 @@ const (
 )
 
 func init() {
-	tmjson.RegisterType(PubKey{}, PubKeyName)
-	tmjson.RegisterType(PrivKey{}, PrivKeyName)
+	jsontypes.MustRegister(PubKey{})
+	jsontypes.MustRegister(PrivKey{})
 }
 
 // PrivKey implements crypto.PrivKey.
 type PrivKey []byte
+
+// TypeTag satisfies the jsontypes.Tagged interface.
+func (PrivKey) TypeTag() string { return PrivKeyName }
 
 // Bytes returns the privkey byte format.
 func (privKey PrivKey) Bytes() []byte {
@@ -121,7 +125,7 @@ func (privKey PrivKey) Type() string {
 // It uses OS randomness in conjunction with the current global random seed
 // in tendermint/libs/common to generate the private key.
 func GenPrivKey() PrivKey {
-	return genPrivKey(crypto.CReader())
+	return genPrivKey(rand.Reader)
 }
 
 // genPrivKey generates a new ed25519 private key using the provided reader.
@@ -139,9 +143,8 @@ func genPrivKey(rand io.Reader) PrivKey {
 // NOTE: secret should be the output of a KDF like bcrypt,
 // if it's derived from user input.
 func GenPrivKeyFromSecret(secret []byte) PrivKey {
-	seed := crypto.Sha256(secret) // Not Ripemd160 because we want 32 bytes.
-
-	return PrivKey(ed25519.NewKeyFromSeed(seed))
+	seed := sha256.Sum256(secret)
+	return PrivKey(ed25519.NewKeyFromSeed(seed[:]))
 }
 
 //-------------------------------------
@@ -151,12 +154,15 @@ var _ crypto.PubKey = PubKey{}
 // PubKeyEd25519 implements crypto.PubKey for the Ed25519 signature scheme.
 type PubKey []byte
 
+// TypeTag satisfies the jsontypes.Tagged interface.
+func (PubKey) TypeTag() string { return PubKeyName }
+
 // Address is the SHA256-20 of the raw pubkey bytes.
 func (pubKey PubKey) Address() crypto.Address {
 	if len(pubKey) != PubKeySize {
 		panic("pubkey is incorrect size")
 	}
-	return crypto.Address(tmhash.SumTruncated(pubKey))
+	return crypto.AddressHash(pubKey)
 }
 
 // Bytes returns the PubKey byte format.
@@ -223,5 +229,5 @@ func (b *BatchVerifier) Add(key crypto.PubKey, msg, signature []byte) error {
 }
 
 func (b *BatchVerifier) Verify() (bool, []bool) {
-	return b.BatchVerifier.Verify(crypto.CReader())
+	return b.BatchVerifier.Verify(rand.Reader)
 }

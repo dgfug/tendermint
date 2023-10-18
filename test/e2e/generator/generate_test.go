@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	e2e "github.com/tendermint/tendermint/test/e2e/pkg"
 )
 
@@ -26,15 +27,21 @@ func TestGenerator(t *testing.T) {
 					numStateSyncs++
 				}
 				t.Run(name, func(t *testing.T) {
-					if node.StartAt > m.InitialHeight+5 && !node.Stateless() {
-						require.NotEqual(t, node.StateSync, e2e.StateSyncDisabled)
+					t.Run("StateSync", func(t *testing.T) {
+						if node.StartAt > m.InitialHeight+5 && !node.Stateless() {
+							require.NotEqual(t, node.StateSync, e2e.StateSyncDisabled)
+						}
+						if node.StateSync != e2e.StateSyncDisabled {
+							require.Zero(t, node.Seeds, node.StateSync)
+							require.True(t, len(node.PersistentPeers) >= 2 || len(node.PersistentPeers) == 0,
+								"peers: %v", node.PersistentPeers)
+						}
+					})
+					if e2e.Mode(node.Mode) != e2e.ModeLight {
+						t.Run("PrivvalProtocol", func(t *testing.T) {
+							require.NotZero(t, node.PrivvalProtocol)
+						})
 					}
-					if node.StateSync != e2e.StateSyncDisabled {
-						require.Zero(t, node.Seeds, node.StateSync)
-						require.True(t, len(node.PersistentPeers) >= 2 || len(node.PersistentPeers) == 0,
-							"peers: %v", node.PersistentPeers)
-					}
-
 				})
 			}
 			require.True(t, numStateSyncs <= 2)

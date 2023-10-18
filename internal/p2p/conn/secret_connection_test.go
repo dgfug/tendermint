@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	mrand "math/rand"
 	"os"
@@ -22,7 +21,7 @@ import (
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	"github.com/tendermint/tendermint/crypto/sr25519"
-	"github.com/tendermint/tendermint/libs/async"
+	"github.com/tendermint/tendermint/internal/libs/async"
 	tmrand "github.com/tendermint/tendermint/libs/rand"
 )
 
@@ -53,6 +52,7 @@ func (pk privKeyWithNilPubKey) Sign(msg []byte) ([]byte, error) { return pk.orig
 func (pk privKeyWithNilPubKey) PubKey() crypto.PubKey           { return nil }
 func (pk privKeyWithNilPubKey) Equals(pk2 crypto.PrivKey) bool  { return pk.orig.Equals(pk2) }
 func (pk privKeyWithNilPubKey) Type() string                    { return "privKeyWithNilPubKey" }
+func (privKeyWithNilPubKey) TypeTag() string                    { return "test/privKeyWithNilPubKey" }
 
 func TestSecretConnectionHandshake(t *testing.T) {
 	fooSecConn, barSecConn := makeSecretConnPair(t)
@@ -228,8 +228,8 @@ func TestDeriveSecretsAndChallengeGolden(t *testing.T) {
 	goldenFilepath := filepath.Join("testdata", t.Name()+".golden")
 	if *update {
 		t.Logf("Updating golden test vector file %s", goldenFilepath)
-		data := createGoldenTestVectors(t)
-		require.NoError(t, ioutil.WriteFile(goldenFilepath, []byte(data), 0644))
+		data := createGoldenTestVectors()
+		require.NoError(t, os.WriteFile(goldenFilepath, []byte(data), 0644))
 	}
 	f, err := os.Open(goldenFilepath)
 	if err != nil {
@@ -241,15 +241,15 @@ func TestDeriveSecretsAndChallengeGolden(t *testing.T) {
 		line := scanner.Text()
 		params := strings.Split(line, ",")
 		randSecretVector, err := hex.DecodeString(params[0])
-		require.Nil(t, err)
+		require.NoError(t, err)
 		randSecret := new([32]byte)
 		copy((*randSecret)[:], randSecretVector)
 		locIsLeast, err := strconv.ParseBool(params[1])
-		require.Nil(t, err)
+		require.NoError(t, err)
 		expectedRecvSecret, err := hex.DecodeString(params[2])
-		require.Nil(t, err)
+		require.NoError(t, err)
 		expectedSendSecret, err := hex.DecodeString(params[3])
-		require.Nil(t, err)
+		require.NoError(t, err)
 
 		recvSecret, sendSecret := deriveSecrets(randSecret, locIsLeast)
 		require.Equal(t, expectedRecvSecret, (*recvSecret)[:], "Recv Secrets aren't equal")
@@ -306,7 +306,7 @@ func readLots(t *testing.T, wg *sync.WaitGroup, conn io.Reader, n int) {
 // Creates the data for a test vector file.
 // The file format is:
 // Hex(diffie_hellman_secret), loc_is_least, Hex(recvSecret), Hex(sendSecret), Hex(challenge)
-func createGoldenTestVectors(t *testing.T) string {
+func createGoldenTestVectors() string {
 	data := ""
 	for i := 0; i < 32; i++ {
 		randSecretVector := tmrand.Bytes(32)

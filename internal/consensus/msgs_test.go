@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -11,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/merkle"
-	"github.com/tendermint/tendermint/crypto/tmhash"
 	cstypes "github.com/tendermint/tendermint/internal/consensus/types"
 	"github.com/tendermint/tendermint/internal/test/factory"
 	"github.com/tendermint/tendermint/libs/bits"
@@ -24,6 +25,9 @@ import (
 )
 
 func TestMsgToProto(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	psh := types.PartSetHeader{
 		Total: 1,
 		Hash:  tmrand.Bytes(32),
@@ -62,8 +66,8 @@ func TestMsgToProto(t *testing.T) {
 	pbProposal := proposal.ToProto()
 
 	pv := types.NewMockPV()
-	vote, err := factory.MakeVote(pv, factory.DefaultTestChainID,
-		0, 1, 0, 2, types.BlockID{}, time.Now())
+	vote, err := factory.MakeVote(ctx, pv, factory.DefaultTestChainID,
+		0, 1, 0, 2, bi, time.Now())
 	require.NoError(t, err)
 	pbVote := vote.ToProto()
 
@@ -313,7 +317,6 @@ func TestWALMsgProto(t *testing.T) {
 	}
 }
 
-// nolint:lll //ignore line length for tests
 func TestConsMsgsVectors(t *testing.T) {
 	date := time.Date(2018, 8, 30, 12, 0, 0, 0, time.UTC)
 	psh := types.PartSetHeader{
@@ -362,6 +365,7 @@ func TestConsMsgsVectors(t *testing.T) {
 		Timestamp:        date,
 		Type:             tmproto.PrecommitType,
 		BlockID:          bi,
+		Extension:        []byte("extension"),
 	}
 	vpb := v.ToProto()
 
@@ -398,7 +402,7 @@ func TestConsMsgsVectors(t *testing.T) {
 			"2a36080110011a3008011204746573741a26080110011a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d"},
 		{"Vote", &tmcons.Message{Sum: &tmcons.Message_Vote{
 			Vote: &tmcons.Vote{Vote: vpb}}},
-			"32700a6e0802100122480a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d2a0608c0b89fdc0532146164645f6d6f72655f6578636c616d6174696f6e3801"},
+			"327b0a790802100122480a206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d1224080112206164645f6d6f72655f6578636c616d6174696f6e5f6d61726b735f636f64652d2a0608c0b89fdc0532146164645f6d6f72655f6578636c616d6174696f6e38014a09657874656e73696f6e"},
 		{"HasVote", &tmcons.Message{Sum: &tmcons.Message_HasVote{
 			HasVote: &tmcons.HasVote{Height: 1, Round: 1, Type: tmproto.PrevoteType, Index: 1}}},
 			"3a080801100118012001"},
@@ -663,7 +667,7 @@ func TestProposalPOLMessageValidateBasic(t *testing.T) {
 
 func TestBlockPartMessageValidateBasic(t *testing.T) {
 	testPart := new(types.Part)
-	testPart.Proof.LeafHash = tmhash.Sum([]byte("leaf"))
+	testPart.Proof.LeafHash = crypto.Checksum([]byte("leaf"))
 	testCases := []struct {
 		testName      string
 		messageHeight int64

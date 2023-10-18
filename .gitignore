@@ -25,6 +25,7 @@ docs/_build
 docs/dist
 docs/node_modules/
 docs/spec
+docs/.vuepress/public/rpc
 index.html.md
 libs/pubsub/query/fuzz_test/output
 profile\.out
@@ -46,3 +47,11 @@ test/fuzz/**/corpus
 test/fuzz/**/crashers
 test/fuzz/**/suppressions
 test/fuzz/**/*.zip
+proto/spec/**/*.pb.go
+*.aux
+*.bbl
+*.blg
+*.log
+*.pdf
+*.gz
+*.dvi

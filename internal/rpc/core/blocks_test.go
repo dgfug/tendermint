@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -11,10 +12,8 @@ import (
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	sm "github.com/tendermint/tendermint/internal/state"
-	tmstate "github.com/tendermint/tendermint/proto/tendermint/state"
+	"github.com/tendermint/tendermint/internal/state/mocks"
 	"github.com/tendermint/tendermint/rpc/coretypes"
-	rpctypes "github.com/tendermint/tendermint/rpc/jsonrpc/types"
-	"github.com/tendermint/tendermint/types"
 )
 
 func TestBlockchainInfo(t *testing.T) {
@@ -70,21 +69,22 @@ func TestBlockchainInfo(t *testing.T) {
 }
 
 func TestBlockResults(t *testing.T) {
-	results := &tmstate.ABCIResponses{
-		DeliverTxs: []*abci.ResponseDeliverTx{
+	results := &abci.ResponseFinalizeBlock{
+		TxResults: []*abci.ExecTxResult{
 			{Code: 0, Data: []byte{0x01}, Log: "ok", GasUsed: 10},
 			{Code: 0, Data: []byte{0x02}, Log: "ok", GasUsed: 5},
 			{Code: 1, Log: "not ok", GasUsed: 0},
 		},
-		EndBlock:   &abci.ResponseEndBlock{},
-		BeginBlock: &abci.ResponseBeginBlock{},
 	}
 
 	env := &Environment{}
 	env.StateStore = sm.NewStore(dbm.NewMemDB())
-	err := env.StateStore.SaveABCIResponses(100, results)
+	err := env.StateStore.SaveFinalizeBlockResponses(100, results)
 	require.NoError(t, err)
-	env.BlockStore = mockBlockStore{height: 100}
+	mockstore := &mocks.BlockStore{}
+	mockstore.On("Height").Return(int64(100))
+	mockstore.On("Base").Return(int64(1))
+	env.BlockStore = mockstore
 
 	testCases := []struct {
 		height  int64
@@ -96,17 +96,19 @@ func TestBlockResults(t *testing.T) {
 		{101, true, nil},
 		{100, false, &coretypes.ResultBlockResults{
 			Height:                100,
-			TxsResults:            results.DeliverTxs,
+			TxsResults:            results.TxResults,
 			TotalGasUsed:          15,
-			BeginBlockEvents:      results.BeginBlock.Events,
-			EndBlockEvents:        results.EndBlock.Events,
-			ValidatorUpdates:      results.EndBlock.ValidatorUpdates,
-			ConsensusParamUpdates: results.EndBlock.ConsensusParamUpdates,
+			FinalizeBlockEvents:   results.Events,
+			ValidatorUpdates:      results.ValidatorUpdates,
+			ConsensusParamUpdates: results.ConsensusParamUpdates,
 		}},
 	}
 
+	ctx := context.Background()
 	for _, tc := range testCases {
-		res, err := env.BlockResults(&rpctypes.Context{}, &tc.height)
+		res, err := env.BlockResults(ctx, &coretypes.RequestBlockInfo{
+			Height: (*coretypes.Int64)(&tc.height),
+		})
 		if tc.wantErr {
 			assert.Error(t, err)
 		} else {
@@ -114,22 +116,4 @@ func TestBlockResults(t *testing.T) {
 			assert.Equal(t, tc.wantRes, res)
 		}
 	}
-}
-
-type mockBlockStore struct {
-	height int64
-}
-
-func (mockBlockStore) Base() int64                                       { return 1 }
-func (store mockBlockStore) Height() int64                               { return store.height }
-func (store mockBlockStore) Size() int64                                 { return store.height }
-func (mockBlockStore) LoadBaseMeta() *types.BlockMeta                    { return nil }
-func (mockBlockStore) LoadBlockMeta(height int64) *types.BlockMeta       { return nil }
-func (mockBlockStore) LoadBlock(height int64) *types.Block               { return nil }
-func (mockBlockStore) LoadBlockByHash(hash []byte) *types.Block          { return nil }
-func (mockBlockStore) LoadBlockPart(height int64, index int) *types.Part { return nil }
-func (mockBlockStore) LoadBlockCommit(height int64) *types.Commit        { return nil }
-func (mockBlockStore) LoadSeenCommit() *types.Commit                     { return nil }
-func (mockBlockStore) PruneBlocks(height int64) (uint64, error)          { return 0, nil }
-func (mockBlockStore) SaveBlock(block *types.Block, blockParts *types.PartSet, seenCommit *types.Commit) {
 }
